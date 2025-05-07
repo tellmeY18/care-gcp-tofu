@@ -1,0 +1,4 @@
+bucket               = "gcs-care-tf"
+key                  = "ohn-infra/terraform.tfstate"
+region               = "asia-south1"
+workspace_key_prefix = "dev"
