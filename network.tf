@@ -1,7 +1,8 @@
-# network.tf
+resource "google_compute_address" "care_pip" {
+  name   = "care-pip"
+  region = "asia-south1"
+}
 
-
-#### 1. VPC & Subnet with Flow Logs Enabled
 module "vpc" {
   source  = "terraform-google-modules/network/google"
   version = "~> 11.0"
@@ -42,7 +43,7 @@ module "vpc" {
       }
     ]
   }
-  routes           = []
+  routes = []
 }
 
 # GKE Pod and Service IP ranges for VPC-native cluster
@@ -61,6 +62,7 @@ resource "google_compute_global_address" "services_range" {
   prefix_length = 20
   network       = module.vpc.network_self_link
 }
+
 
 
 module "vpc_flow_logs_bucket" {

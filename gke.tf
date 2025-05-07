@@ -38,5 +38,5 @@ output "gke_endpoint" {
 output "gke_ca_certificate" {
   description = "The base64 encoded public certificate for the cluster"
   value       = module.gke_cluster.ca_certificate
-  sensitive = true
+  sensitive   = true
 }
