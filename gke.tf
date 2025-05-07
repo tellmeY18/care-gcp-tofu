@@ -9,6 +9,7 @@ module "gke_cluster" {
   zones                    = [var.zone]
   network                  = module.vpc.network_name
   subnetwork               = module.vpc.subnets_names[1]
+  deletion_protection      = false
   ip_range_pods            = google_compute_global_address.pods_range.name
   ip_range_services        = google_compute_global_address.services_range.name
   remove_default_node_pool = true
