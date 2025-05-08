@@ -50,7 +50,6 @@ module "alloydb" {
       days_of_week = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
       start_times  = ["22:00:00:00"]
     }
-    time_based_retention_count    = null
     quantum_based_retention_count = 10
 
   }
@@ -60,7 +59,6 @@ module "alloydb" {
   primary_instance = {
     instance_id        = "${var.app}-${var.environment}-primary"
     display_name       = "${var.app}-${var.environment}-primary"
-    availability_type  = "REGIONAL"
     machine_cpu_count  = var.alloydb_cpu_count
     ssl_mode           = "ALLOW_UNENCRYPTED_AND_ENCRYPTED"
     require_connectors = false
@@ -82,7 +80,6 @@ module "alloydb" {
     for i in range(var.alloydb_read_pool_size) : {
       instance_id        = "${var.app}-${var.environment}-read-${i + 1}"
       display_name       = "${var.app}-${var.environment}-read-${i + 1}"
-      availability_type  = "REGIONAL"
       machine_cpu_count  = var.alloydb_cpu_count
       ssl_mode           = "ALLOW_UNENCRYPTED_AND_ENCRYPTED"
       require_connectors = false

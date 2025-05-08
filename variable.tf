@@ -24,6 +24,10 @@ variable "region" {
 variable "app" {
 
 }
+
+variable "domain_name" {
+}
+
 variable "alloydb_cpu_count" {
   description = "The number of CPUs to allocate for the AlloyDB machine."
   type        = number
