@@ -1,6 +1,5 @@
-resource "google_compute_address" "care_pip" {
-  name   = "care-pip"
-  region = "asia-south1"
+resource "google_compute_global_address" "care_pip" {
+  name = "care-pip"
 }
 
 module "vpc" {

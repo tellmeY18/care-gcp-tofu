@@ -1,0 +1,61 @@
+resource "kubernetes_namespace" "care_namespace" {
+  metadata {
+    name = "care-production"
+  }
+}
+
+resource "kubernetes_config_map" "care_production" {
+  metadata {
+    name      = "care-production"
+    namespace = "care-production" # Change to your desired namespace if needed
+
+    labels = {
+      app = "care"
+      env = "staging"
+    }
+  }
+
+  data = {
+    POSTGRES_DB                = "care"
+    POSTGRES_USER              = "postgres"
+    POSTGRES_HOST              = "host"
+    POSTGRES_PORT              = "5432"
+    DJANGO_SECURE_SSL_REDIRECT = "False"
+    DJANGO_SETTINGS_MODULE     = "config.settings.staging"
+    CSRF_TRUSTED_ORIGINS       = jsonencode(["http://care-django-production", "https://care.example.com", "https://careapi.example.com"])
+    DJANGO_ALLOWED_HOSTS       = jsonencode(["care-django-production", "care.example.com", "careapi.example.com"])
+    RATE_LIMIT                 = "5/10m"
+  }
+}
+
+resource "kubernetes_secret" "care_production" {
+  metadata {
+    name      = "care-production"
+    namespace = "care-production" # Change to your desired namespace if needed
+
+    labels = {
+      app = "care"
+      env = "staging"
+    }
+  }
+
+  data = {
+    DJANGO_SECRET_KEY           = "itsveryinsecuretokeepthislikethis"
+    SENTRY_PROFILES_SAMPLE_RATE = "0.5"
+    SENTRY_TRACES_SAMPLE_RATE   = "0.5"
+    SENTRY_ENVIRONMENT          = "sentry-demo"
+    SENTRY_DSN                  = "yourdsn/1234"
+    POSTGRES_PASSWORD           = "postgrespass"
+    CELERY_BROKER_URL           = "redis-url"
+    REDIS_URL                   = "redisurl"
+    DJANGO_ADMIN_URL            = "adminurl"
+    DATABASE_URL                = "postgres://postgres:testpassword@host:port/dbname"
+    BUCKET_KEY                  = "2619f726de727d1c6c0c86277389c58f"
+    BUCKET_SECRET               = "bucket-secret"
+    JWKS_BASE64                 = "securejwks"
+    FILE_UPLOAD_BUCKET_ENDPOINT = "https://s3storage.endpoint"
+    FACILITY_S3_BUCKET_ENDPOINT = "https://s3storage.endpoint"
+    FACILITY_S3_BUCKET_ENDPOINT = "https://s3storage.endpoint/care-facility-public-bucket"
+    FACILITY_S3_STATIC_PREFIX   = "https://s3storage.endpoint/care-facility-public-bucket"
+  }
+}

@@ -14,5 +14,3 @@ destroy: prep
 
 lint:
 	@tofu fmt -write=true -recursive
-save:
-	@tofu plan -out=plan.out -var-file=environments/$(ENV).tfvars

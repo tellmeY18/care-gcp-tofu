@@ -1,65 +1,131 @@
-module "nginx_deployment" {
-  source       = "terraform-iaac/deployment/kubernetes"
-  name         = "nginx"
-  namespace    = "default"
-  image        = "nginx:latest"
-  replicas     = 1
-  internal_port = [{
-    name          = "http"
-    internal_port = 80
-    host_port     = null
-  }]
-}
-
-module "nginx_service" {
-  source        = "terraform-iaac/service/kubernetes"
-  app_name      = module.nginx_deployment.name
-  app_namespace = module.nginx_deployment.namespace
-  type          = "NodePort"
-
-  port_mapping = [{
-    name          = "http"
-    internal_port = 80
-    external_port = 80
-  }]
-
-  annotations = {
-    # Enable container-native load balancing (NEG)
-    "cloud.google.com/neg" = jsonencode({ ingress = true })
-    # Attach GCP BackendConfig
-    "cloud.google.com/backend-config" = jsonencode({ default = "nginx-backend-config" })
-  }
-}
-
+# BackendConfig for health checks and backend settings
 resource "kubernetes_manifest" "backend_config" {
   manifest = {
     apiVersion = "cloud.google.com/v1"
     kind       = "BackendConfig"
     metadata = {
       name      = "nginx-backend-config"
-      namespace = module.nginx_service.namespace
+      namespace = kubernetes_namespace.care_namespace.metadata[0].name
     }
     spec = {
+      timeoutSec = 60
+      connectionDraining = {
+        drainingTimeoutSec = 60
+      }
       healthCheck = {
-        checkIntervalSec    = 15
-        timeoutSec          = 5
-        healthyThreshold    = 1
-        unhealthyThreshold  = 2
-        type                = "HTTP"
-        requestPath         = "/"
-        port                = 80
+        checkIntervalSec = 30
+        port             = 9000
+        type             = "HTTP"
+        requestPath      = "/health/"
       }
     }
   }
 }
 
+# Django Application Deployment
+module "care_django_deployment" {
+  source = "git::https://github.com/tellmeY18/terraform-kubernetes-deployment.git?ref=main"
+
+  name      = "care-django-production"
+  namespace = kubernetes_namespace.care_namespace.metadata[0].name
+  image     = "ghcr.io/ohcnetwork/care:latest"
+  command   = ["/app/start.sh"]
+  replicas  = 2
+
+  internal_port = [{
+    name          = "django"
+    internal_port = 9000
+    host_port     = null
+  }]
+
+  env_from = [
+    {
+      config_map_ref = { name = "care-production" }
+    },
+    {
+      secret_ref = { name = "care-production" }
+    }
+  ]
+}
+
+# Celery Beat Deployment
+module "care_celery_beat" {
+  source = "git::https://github.com/tellmeY18/terraform-kubernetes-deployment.git?ref=main"
+
+  name      = "care-celery-beat"
+  namespace = kubernetes_namespace.care_namespace.metadata[0].name
+  image     = "ghcr.io/ohcnetwork/care:latest"
+  command   = ["/app/celery_beat.sh"]
+  replicas  = 1
+
+  env_from = [
+    {
+      config_map_ref = { name = "care-production" }
+    },
+    {
+      secret_ref = { name = "care-production" }
+    }
+  ]
+}
+
+# Celery Worker Deployment
+module "care_celery_worker" {
+  source = "git::https://github.com/tellmeY18/terraform-kubernetes-deployment.git?ref=main"
+
+  name      = "care-celery-worker"
+  namespace = kubernetes_namespace.care_namespace.metadata[0].name
+  image     = "ghcr.io/ohcnetwork/care:latest"
+  command   = ["/app/celery_worker.sh"]
+  replicas  = 1
+
+  env_from = [
+    {
+      config_map_ref = { name = "care-production" }
+    },
+    {
+      secret_ref = { name = "care-production" }
+    }
+  ]
+}
+
+# Service with BackendConfig Integration
+module "care_service" {
+  source        = "terraform-iaac/service/kubernetes"
+  app_name      = module.care_django_deployment.name
+  app_namespace = kubernetes_namespace.care_namespace.metadata[0].name
+  type          = "NodePort"
+
+  port_mapping = [{
+    name          = "http"
+    internal_port = 9000
+    external_port = 80
+  }]
+
+  annotations = {
+    "cloud.google.com/neg"            = jsonencode({ ingress = true })
+    "cloud.google.com/backend-config" = jsonencode({ default = "nginx-backend-config" })
+  }
+
+  depends_on = [
+    kubernetes_manifest.backend_config,
+    module.gke_cluster
+  ]
+}
+
+resource "google_compute_ssl_policy" "care_ssl_policy" {
+  name            = "care-ssl-policy"
+  min_tls_version = "TLS_1_2"
+  profile         = "MODERN" # Disables TLS 1.0/1.1 and weak ciphers
+}
+
+# Frontend Configuration
 resource "kubernetes_manifest" "frontend_config" {
   manifest = {
     apiVersion = "networking.gke.io/v1beta1"
     kind       = "FrontendConfig"
     metadata = {
       name      = "nginx-frontend-config"
-      namespace = module.nginx_service.namespace
+      namespace = kubernetes_namespace.care_namespace.metadata[0].name
     }
     spec = {
       redirectToHttps = { enabled = true }
@@ -67,30 +133,14 @@ resource "kubernetes_manifest" "frontend_config" {
   }
 }
 
-resource "kubernetes_annotations" "service_annotations" {
-  api_version = "v1"
-  kind        = "Service"
-  metadata {
-    name      = module.nginx_service.name
-    namespace = module.nginx_service.namespace
-  }
-  annotations = {
-    "cloud.google.com/neg"            = jsonencode({ ingress = true })
-    "cloud.google.com/backend-config" = jsonencode({ default = "nginx-backend-config" })
-  }
-  depends_on = [
-    module.nginx_service,
-    kubernetes_manifest.backend_config
-  ]
-}
-
+# Managed SSL Certificate
 resource "kubernetes_manifest" "managed_cert" {
   manifest = {
     apiVersion = "networking.gke.io/v1beta1"
     kind       = "ManagedCertificate"
     metadata = {
       name      = "nginx-cert"
-      namespace = module.nginx_service.namespace
+      namespace = kubernetes_namespace.care_namespace.metadata[0].name
     }
     spec = {
       domains = [var.domain_name]
@@ -98,14 +148,16 @@ resource "kubernetes_manifest" "managed_cert" {
   }
 }
 
+# Ingress Configuration
 resource "kubernetes_ingress_v1" "nginx_ingress" {
   metadata {
     name      = "nginx-ingress"
-    namespace = module.nginx_service.namespace
+    namespace = kubernetes_namespace.care_namespace.metadata[0].name
     annotations = {
       "kubernetes.io/ingress.class"                 = "gce"
-      "kubernetes.io/ingress.global-static-ip-name" = google_compute_global_address.nginx_static_ip.name
+      "kubernetes.io/ingress.global-static-ip-name" = google_compute_global_address.care_pip.name
       "networking.gke.io/managed-certificates"      = kubernetes_manifest.managed_cert.manifest.metadata.name
+      "networking.gke.io/v1beta1.FrontendConfig"    = kubernetes_manifest.frontend_config.manifest.metadata.name
       "kubernetes.io/ingress.allow-http"            = "false"
     }
   }
@@ -115,11 +167,11 @@ resource "kubernetes_ingress_v1" "nginx_ingress" {
       host = var.domain_name
       http {
         path {
-          path      = "/"
+          path      = "/*"
           path_type = "ImplementationSpecific"
           backend {
             service {
-              name = module.nginx_service.name
+              name = module.care_service.name
               port {
                 number = 80
               }
@@ -131,29 +183,8 @@ resource "kubernetes_ingress_v1" "nginx_ingress" {
   }
 
   depends_on = [
-    kubernetes_manifest.managed_cert,              
-    module.nginx_service,
+    kubernetes_manifest.managed_cert,
+    module.care_service,
     kubernetes_manifest.frontend_config,
-    kubernetes_annotations.service_annotations
   ]
 }
-
-resource "google_compute_global_address" "nginx_static_ip" {
-  name = "nginx-static-ip"
-}
-
-output "load_balancer_ip" {
-  description = "Global static IP of the Ingress"
-  value       = google_compute_global_address.nginx_static_ip.address
-}
-
-output "ingress_status" {
-  description = "Status of the GKE Ingress"
-  value       = kubernetes_ingress_v1.nginx_ingress.status
-}
-
-output "domain" {
-  description = "Configured domain for nginx"
-  value       = var.domain_name
-}
-

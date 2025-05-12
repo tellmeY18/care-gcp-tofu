@@ -8,11 +8,11 @@ terraform {
       source  = "hashicorp/google"
       version = "6.33.0"
     }
-     google-beta = {
+    google-beta = {
       source  = "hashicorp/google-beta"
       version = "6.33.0"
     }
-   random = {
+    random = {
       source  = "hashicorp/random"
       version = "~> 3.7.2"
     }
